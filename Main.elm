@@ -6,6 +6,7 @@ import Html.Events exposing (..)
 import Http
 import Json.Decode exposing (..)
 import Dict as Dict
+import Regex exposing (..)
 
 
 main =
@@ -21,8 +22,29 @@ main =
 -- MODEL
 
 
-type ScalableUrl
-    = ScalableUrl String Int
+type alias ScalableUrl =
+    { maxSize : ( Int, Int )
+    , urlTemplate : ( String, String )
+    }
+
+
+type Url
+    = Url String
+
+
+scaleUrl : ScalableUrl -> Int -> Maybe Url
+scaleUrl { maxSize, urlTemplate } height =
+    let
+        ( _, maxHeight ) =
+            maxSize
+
+        ( a, b ) =
+            urlTemplate
+    in
+        if height <= maxHeight then
+            Just (Url (String.concat [ a, toString height, b ]))
+        else
+            Nothing
 
 
 type alias Model =
@@ -65,7 +87,16 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    div [] <| List.map (\(ScalableUrl a b) -> div [] [ text a ]) model.urls
+    let
+        f i x =
+            case (scaleUrl x 600) of
+                Just (Url url) ->
+                    img [ src url, style [("width", "600px"), ("height", "450px"), ("position", "absolute"), ("opacity", "0.2")]] []
+
+                _ ->
+                    text "no"
+    in
+        div [] <| List.indexedMap f model.urls
 
 
 
@@ -90,6 +121,31 @@ fetch =
         Http.send NewData (Http.get url decodeResponse)
 
 
+mkScalableUrl : ( String, Int, Int ) -> Decoder ScalableUrl
+mkScalableUrl ( thumburl, width, height ) =
+    let
+        result =
+            find All (regex "(.*[/-])\\d*(px.*)") thumburl
+
+        errMsg =
+            "Invalid Data"
+    in
+        case result of
+            { submatches } :: [] ->
+                case submatches of
+                    (Just a) :: (Just b) :: [] ->
+                        succeed
+                            { maxSize = ( width - 1, height - 1 )
+                            , urlTemplate = ( a, b )
+                            }
+
+                    _ ->
+                        fail errMsg
+
+            _ ->
+                fail errMsg
+
+
 decodeResponse : Decoder (List ScalableUrl)
 decodeResponse =
     field "query" <|
@@ -98,4 +154,8 @@ decodeResponse =
                 dict <|
                     field "imageinfo" <|
                         field "0" <|
-                            map2 ScalableUrl (field "thumburl" string) (field "height" int)
+                            andThen mkScalableUrl <|
+                                map3 (\a b c -> ( a, b, c ))
+                                    (field "thumburl" string)
+                                    (field "width" int)
+                                    (field "height" int)
