@@ -49,12 +49,15 @@ scaleUrl { maxSize, urlTemplate } height =
 
 type alias Model =
     { urls : List ScalableUrl
+    , isFetching : Bool
     }
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model []
+    ( { urls = []
+      , isFetching = False
+      }
     , fetch
     )
 
@@ -75,7 +78,7 @@ update msg model =
             ( model, fetch )
 
         NewData (Ok data) ->
-            ( Model data, Cmd.none )
+            ( { model | urls = data}, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -91,7 +94,7 @@ view model =
         f i x =
             case (scaleUrl x 600) of
                 Just (Url url) ->
-                    img [ src url, style [("width", "600px"), ("height", "450px"), ("position", "absolute"), ("opacity", "0.2")]] []
+                    img [ src url, style [ ( "width", "600px" ), ( "height", "450px" ), ( "position", "absolute" ), ( "opacity", "0.2" ) ] ] []
 
                 _ ->
                     text "no"
@@ -121,41 +124,35 @@ fetch =
         Http.send NewData (Http.get url decodeResponse)
 
 
-mkScalableUrl : ( String, Int, Int ) -> Decoder ScalableUrl
-mkScalableUrl ( thumburl, width, height ) =
+mkScalableUrl : String -> Int -> Int -> Maybe ScalableUrl
+mkScalableUrl thumburl width height =
     let
         result =
             find All (regex "(.*[/-])\\d*(px.*)") thumburl
-
-        errMsg =
-            "Invalid Data"
     in
         case result of
             { submatches } :: [] ->
                 case submatches of
                     (Just a) :: (Just b) :: [] ->
-                        succeed
+                        Just
                             { maxSize = ( width - 1, height - 1 )
                             , urlTemplate = ( a, b )
                             }
 
                     _ ->
-                        fail errMsg
+                        Nothing
 
             _ ->
-                fail errMsg
+                Nothing
 
 
 decodeResponse : Decoder (List ScalableUrl)
 decodeResponse =
-    field "query" <|
-        field "pages" <|
-            Json.Decode.map (List.map Tuple.second << Dict.toList) <|
-                dict <|
-                    field "imageinfo" <|
-                        field "0" <|
-                            andThen mkScalableUrl <|
-                                map3 (\a b c -> ( a, b, c ))
-                                    (field "thumburl" string)
-                                    (field "width" int)
-                                    (field "height" int)
+    at [ "query", "pages" ] <|
+        Json.Decode.map (List.filterMap Tuple.second) <|
+            keyValuePairs <|
+                at [ "imageinfo", "0" ] <|
+                    map3 mkScalableUrl
+                        (field "thumburl" string)
+                        (field "width" int)
+                        (field "height" int)
