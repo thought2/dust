@@ -50,13 +50,27 @@ scaleUrl width { maxSize, urlTemplate } =
             Nothing
 
 
+type alias Settings =
+    { width : Int
+    , waitAdd : ( Time, Time )
+    , stackN : Int
+    }
+
+
 type alias Model =
     { urls : List Url
     , displayedUrls : Maybe (List Url)
     , isFetching : Bool
-    , width : Int
     , addingTime : Time
     , deletionTime : Time
+    }
+
+
+settings : Settings
+settings =
+    { width = 1000
+    , waitAdd = ( 0.0, 5.0 )
+    , stackN = 10
     }
 
 
@@ -65,9 +79,8 @@ init =
     ( { urls = []
       , displayedUrls = Nothing
       , isFetching = False
-      , width = 400
       , addingTime = 1
-      , deletionTime = 1
+      , deletionTime = 10
       }
     , fetch
     )
@@ -145,11 +158,12 @@ addToDisplay float model =
     case ( model.urls, model.displayedUrls ) of
         ( x :: xs, Just dUrls ) ->
             let
+                dUrls_ = List.drop (List.length dUrls - 30) dUrls 
                 index =
-                    round (float * toFloat (List.length dUrls))
+                    round (float * toFloat (List.length dUrls_))
             in
                 { model
-                    | displayedUrls = Just <| addAtIndex index dUrls x
+                    | displayedUrls = Just <| addAtIndex index dUrls_ x
                     , urls = List.drop 1 model.urls
                 }
 
@@ -164,7 +178,7 @@ maybeStart model =
             model
     in
         if List.length urls >= 15 && not (isJust displayedUrls) then
-            initDisplay 5 model
+            initDisplay 1 model
         else
             model
 
@@ -173,7 +187,7 @@ handleNewData : List ScalableUrl -> Model -> Model
 handleNewData data model =
     let
         nextUrls =
-            List.filterMap (scaleUrl model.width) data ++ model.urls
+            List.filterMap (scaleUrl settings.width) data ++ model.urls
 
         nextModel =
             { model | isFetching = False, urls = nextUrls }
@@ -238,19 +252,18 @@ update msg model =
         AddingTick time ->
             ( model
             , Cmd.batch
-                [ Random.generate AddToDisplay (Random.float 0 1)
-                , Random.generate NewAddingTime (Random.float 3 5)
+                [ Random.generate AddToDisplay (Random.float 0.5 1)
+                , Random.generate NewAddingTime (uncurry Random.float <| settings.waitAdd)
                 ]
             )
 
         DeletionTick time ->
             ( model
             , Cmd.batch
-                [ Random.generate RemoveFromDisplay (Random.float 0 1)
-                , Random.generate NewDeletionTime (Random.float 3 5)
+                [ Random.generate RemoveFromDisplay (Random.float 5 10)
+                , Random.generate NewDeletionTime (Random.float 100 100)
                 ]
             )
-
 
         _ ->
             ( model, Cmd.none )
@@ -265,64 +278,31 @@ px n =
     String.append (toString n) "px"
 
 
-imgStack : List Url -> List (Html Msg)
-imgStack xs =
+imgList : List Url -> Html Msg
+imgList xs =
     let
         n =
             List.length xs
 
-        opacity =
-            1.0 / (toFloat <| n)
-
-        styles i =
-            let
-                offset =
-                    px <| (toFloat i / toFloat n) * 50.0
-            in
-                [ ( "width", "600px" )
-                , ( "height", "450px" )
-                , ( "left", offset )
-                , ( "top", offset )
-                , ( "border", String.append (px 1) " solid black" )
-                , ( "position", "absolute" )
-                , ( "opacity", toString opacity )
+        f i url =
+            img
+                [ width 100
+                , src url
                 ]
-
-        f i (Url url) =
-            img [ src url, style (styles i) ] []
+                []
     in
-        List.indexedMap f xs
-
-
-imgList : List Url -> Html Msg
-imgList xs =
-    let
-        f url =
-            img [ src url, style [ ( "width", px 100 ), ( "height", px 100 ) ] ] []
-    in
-        Keyed.ol [] <|
-            List.map (\(Url url) -> ( url, f url )) xs
+        Keyed.node "div" [ class "container" ] <|
+            List.indexedMap (\i (Url url) -> ( url, f i url )) xs
 
 
 view : Model -> Html Msg
 view model =
-    let
-        f (Url url) =
-            img [ src url, style [ ( "width", "600px" ), ( "height", "450px" ), ( "position", "absolute" ), ( "opacity", "0.2" ) ] ] []
+    case model.displayedUrls of
+        Just urls ->
+            imgList urls
 
-        g i (Url url) =
-            div [] [ text <| String.concat [ (toString i), " ", url ] ]
-
-        menu =
-            [ div [ onClick AddToDisplayRandom ] [ text "more" ], div [ onClick RemoveFromDisplayRandom ] [ text " less" ] ]
-    in
-        case model.displayedUrls of
-            Just urls ->
-                div [] ([ (imgList urls) ] ++ menu)
-
-            --div [] <| (List.indexedMap g urls) ++ menu ++ [ text (toString <| List.length model.urls) ]
-            Nothing ->
-                text "loading"
+        Nothing ->
+            text "loading..."
 
 
 

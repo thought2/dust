@@ -1,0 +1,43 @@
+img {
+  animation-name: fade;
+  animation-duration: 20s;
+  animation-fill-mode: forwards;
+  position: absolute;
+  width: 50vw;
+  height: 50vh;
+  opcairy: 0.2; 
+}
+
+#main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+body {
+  background-color: white;
+  height: 100%;
+  margin: 0px;
+  font-family: Arial;
+}
+
+html {
+  height: 100%;
+}
+
+.container {
+  position: relative;
+  width: 50vw;
+  height: 50vh; 
+}
+
+@keyframes fade {
+    0% { opacity: 0; }
+    50% { opacity: 0; }
+    70% { opacity: 0.2; }
+    78% { opacity: 0.2; }
+    100% { opacity: 0; }
+}
+
+
