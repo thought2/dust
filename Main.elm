@@ -195,15 +195,52 @@ imgList : List Url -> Html Msg
 imgList xs =
     let
         f i url =
-            img [ width 100, src url] []
+            img [ width 100, src url, style styles ] []
+
+        n =
+            List.length xs
+
+        isLoading =
+            n < settings.stackN
+
+        styles =
+            [ ( "visibility"
+              , if not isLoading then
+                    "visible"
+                else
+                    "hidden"
+              )
+            ]
+
+        dots =
+            List.map
+                (\i ->
+                    span
+                        [ class
+                            (if i <= n then
+                                "hidden"
+                             else
+                                "visible"
+                            )
+                        ]
+                        [ text "." ]
+                )
+                (List.reverse <| List.range 0 settings.stackN)
+
+        loading =
+            ( "loading", div [ class "loading" ] ([ text "loading" ] ++ dots) )
     in
         Keyed.node "div" [ class "container" ] <|
-            List.indexedMap (\i (Url url) -> ( url, f i url )) xs
+            (List.indexedMap (\i (Url url) -> ( url, f i url )) xs)
+                ++ if isLoading then
+                    [ loading ]
+                   else
+                    []
 
 
 view : Model -> Html Msg
-view model =
-    imgList model.displayedUrls
+view { displayedUrls } =
+    imgList displayedUrls
 
 
 

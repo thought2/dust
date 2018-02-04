@@ -5,7 +5,6 @@ img {
   position: absolute;
   width: 50vw;
   height: 50vh;
-  opcairy: 0.2; 
 }
 
 #main {
@@ -29,14 +28,29 @@ html {
 .container {
   position: relative;
   width: 50vw;
-  height: 50vh; 
+  height: 50vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading {
+  width: 200px;
+}
+
+.visible {
+  visibility: visible;
+}
+
+.hidden {
+  visibility: hidden;
 }
 
 @keyframes fade {
     0% { opacity: 0; }
-    50% { opacity: 0; }
+    30% { opacity: 0; }
+    60% { opacity: 0.2; }
     70% { opacity: 0.2; }
-    78% { opacity: 0.2; }
     100% { opacity: 0; }
 }
 
