@@ -3,10 +3,8 @@ module Main exposing (..)
 import Html exposing (..)
 import Html.Keyed as Keyed
 import Html.Attributes exposing (..)
-import Html.Events exposing (..)
 import Http
 import Json.Decode exposing (..)
-import Dict as Dict
 import Regex exposing (..)
 import Random as Random
 import Time exposing (..)
@@ -35,6 +33,55 @@ type Url
     = Url String
 
 
+type alias Settings =
+    { width : Int
+    , waitAdd : ( Time, Time )
+    , stackN : Int
+    , urlBuffer : Int
+    }
+
+
+type alias Model =
+    { urls : List Url
+    , displayedUrls : List Url
+    , isFetching : Bool
+    , addingTime : Time
+    }
+
+
+settings : Settings
+settings =
+    { width = 1000
+    , waitAdd = ( 0.0, 5.0 )
+    , stackN = 10
+    , urlBuffer = 20
+    }
+
+
+init : ( Model, Cmd Msg )
+init =
+    ( { urls = []
+      , displayedUrls = []
+      , isFetching = False
+      , addingTime = 1
+      }
+    , fetch
+    )
+
+
+
+-- UPDATE
+
+
+type Msg
+    = Fetch
+    | NewData (Result Http.Error (List ScalableUrl))
+    | FillDisplayed
+    | AddToDisplay Float
+    | AddingTick Time
+    | NewAddingTime Time
+
+
 scaleUrl : Int -> ScalableUrl -> Maybe Url
 scaleUrl width { maxSize, urlTemplate } =
     let
@@ -50,68 +97,9 @@ scaleUrl width { maxSize, urlTemplate } =
             Nothing
 
 
-type alias Settings =
-    { width : Int
-    , waitAdd : ( Time, Time )
-    , stackN : Int
-    }
-
-
-type alias Model =
-    { urls : List Url
-    , displayedUrls : Maybe (List Url)
-    , isFetching : Bool
-    , addingTime : Time
-    , deletionTime : Time
-    }
-
-
-settings : Settings
-settings =
-    { width = 1000
-    , waitAdd = ( 0.0, 5.0 )
-    , stackN = 10
-    }
-
-
-init : ( Model, Cmd Msg )
-init =
-    ( { urls = []
-      , displayedUrls = Nothing
-      , isFetching = False
-      , addingTime = 1
-      , deletionTime = 10
-      }
-    , fetch
-    )
-
-
-
--- UPDATE
-
-
-type Msg
-    = Fetch
-    | NewData (Result Http.Error (List ScalableUrl))
-    | FillDisplayed
-    | AddToDisplay Float
-    | RemoveFromDisplay Float
-    | AddToDisplayRandom
-    | RemoveFromDisplayRandom
-    | AddingTick Time
-    | DeletionTick Time
-    | NewAddingTime Time
-    | NewDeletionTime Time
-
-
-getWidth : ( Int, Int ) -> Int
-getWidth =
-    Tuple.first
-
-
 maybeFetch : Model -> Cmd Msg
 maybeFetch { urls, isFetching } =
-    if List.length urls <= 20 && not isFetching then
+    if List.length urls <= settings.urlBuffer && not isFetching then
         fetch
     else
         Cmd.none
@@ -127,18 +115,6 @@ isJust m =
             False
 
 
-initDisplay n model =
-    case model.displayedUrls of
-        Just _ ->
-            model
-
-        Nothing ->
-            { model
-                | displayedUrls = Just (List.take n model.urls)
-                , urls = List.drop n model.urls
-            }
-
-
 addAtIndex : Int -> List a -> a -> List a
 addAtIndex n xs x =
     List.concat
@@ -148,38 +124,23 @@ addAtIndex n xs x =
         ]
 
 
-removeAtIndex : Int -> List a -> List a
-removeAtIndex n xs =
-    List.append (List.take n xs) (List.drop (n + 1) xs)
-
-
 addToDisplay : Float -> Model -> Model
 addToDisplay float model =
     case ( model.urls, model.displayedUrls ) of
-        ( x :: xs, Just dUrls ) ->
+        ( x :: xs, dUrls ) ->
             let
-                dUrls_ = List.drop (List.length dUrls - 30) dUrls 
+                dUrls_ =
+                    List.drop (List.length dUrls - settings.stackN) dUrls
+
                 index =
                     round (float * toFloat (List.length dUrls_))
             in
                 { model
-                    | displayedUrls = Just <| addAtIndex index dUrls_ x
+                    | displayedUrls = addAtIndex index dUrls_ x
                     , urls = List.drop 1 model.urls
                 }
 
         _ ->
-            model
-
-
-maybeStart : Model -> Model
-maybeStart model =
-    let
-        { urls, displayedUrls } =
-            model
-    in
-        if List.length urls >= 15 && not (isJust displayedUrls) then
-            initDisplay 1 model
-        else
             model
 
 
@@ -195,22 +156,6 @@ handleNewData data model =
         nextModel
 
 
-removeFromDisplay : Float -> Model -> Model
-removeFromDisplay float model =
-    case model.displayedUrls of
-        Just dUrls ->
-            let
-                index =
-                    round (float * toFloat (List.length dUrls))
-            in
-                { model
-                    | displayedUrls = Just <| removeAtIndex index dUrls
-                }
-
-        _ ->
-            model
-
-
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
@@ -220,15 +165,12 @@ update msg model =
         NewData (Ok data) ->
             let
                 model_ =
-                    maybeStart <| handleNewData data model
+                    handleNewData data model
             in
                 ( model_, maybeFetch model_ )
 
         NewData _ ->
             ( model, fetch )
-
-        AddToDisplayRandom ->
-            ( model, Random.generate AddToDisplay (Random.float 0 1) )
 
         AddToDisplay float ->
             let
@@ -237,31 +179,15 @@ update msg model =
             in
                 ( model_, maybeFetch model_ )
 
-        RemoveFromDisplayRandom ->
-            ( model, Random.generate RemoveFromDisplay (Random.float 0 1) )
-
-        RemoveFromDisplay float ->
-            ( removeFromDisplay float model, Cmd.none )
-
         NewAddingTime t ->
             ( { model | addingTime = t }, Cmd.none )
-
-        NewDeletionTime t ->
-            ( { model | deletionTime = t }, Cmd.none )
 
         AddingTick time ->
             ( model
             , Cmd.batch
                 [ Random.generate AddToDisplay (Random.float 0.5 1)
-                , Random.generate NewAddingTime (uncurry Random.float <| settings.waitAdd)
-                ]
-            )
-
-        DeletionTick time ->
-            ( model
-            , Cmd.batch
-                [ Random.generate RemoveFromDisplay (Random.float 5 10)
-                , Random.generate NewDeletionTime (Random.float 100 100)
+                , Random.generate NewAddingTime
+                    (uncurry Random.float <| settings.waitAdd)
                 ]
             )
 
@@ -297,12 +223,7 @@ imgList xs =
 
 view : Model -> Html Msg
 view model =
-    case model.displayedUrls of
-        Just urls ->
-            imgList urls
-
-        Nothing ->
-            text "loading..."
+    imgList model.displayedUrls
 
 
 
@@ -311,10 +232,7 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.batch
-        [ Time.every (model.addingTime * second) AddingTick
-        , Time.every (model.deletionTime * second) DeletionTick
-        ]
+    Time.every (model.addingTime * second) AddingTick
 
 
 
