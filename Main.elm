@@ -51,10 +51,10 @@ type alias Model =
 
 settings : Settings
 settings =
-    { width = 1000
+    { width = 800
     , waitAdd = ( 0.0, 5.0 )
-    , stackN = 10
-    , urlBuffer = 20
+    , stackN = 20
+    , urlBuffer = 30
     }
 
 
@@ -197,11 +197,14 @@ imgList xs =
         f i url =
             img [ width 100, src url, style styles ] []
 
+        nOk =
+            5
+
         n =
             List.length xs
 
         isLoading =
-            n < settings.stackN
+            n < nOk
 
         styles =
             [ ( "visibility"
@@ -225,7 +228,7 @@ imgList xs =
                         ]
                         [ text "." ]
                 )
-                (List.reverse <| List.range 0 settings.stackN)
+                (List.reverse <| List.range 0 nOk)
 
         loading =
             ( "loading", div [ class "loading" ] ([ text "loading" ] ++ dots) )

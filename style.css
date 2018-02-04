@@ -3,8 +3,8 @@ img {
   animation-duration: 20s;
   animation-fill-mode: forwards;
   position: absolute;
-  width: 50vw;
-  height: 50vh;
+  width: 70vw;
+  height: 70vh;
 }
 
 #main {
@@ -27,11 +27,8 @@ html {
 
 .container {
   position: relative;
-  width: 50vw;
-  height: 50vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 70vw;
+  height: 70vh;
 }
 
 .loading {
