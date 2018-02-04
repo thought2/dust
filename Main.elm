@@ -105,16 +105,6 @@ maybeFetch { urls, isFetching } =
         Cmd.none
 
 
-isJust : Maybe a -> Bool
-isJust m =
-    case m of
-        Just _ ->
-            True
-
-        Nothing ->
-            False
-
-
 addAtIndex : Int -> List a -> a -> List a
 addAtIndex n xs x =
     List.concat
@@ -149,11 +139,8 @@ handleNewData data model =
     let
         nextUrls =
             List.filterMap (scaleUrl settings.width) data ++ model.urls
-
-        nextModel =
-            { model | isFetching = False, urls = nextUrls }
     in
-        nextModel
+        { model | isFetching = False, urls = nextUrls }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -207,15 +194,8 @@ px n =
 imgList : List Url -> Html Msg
 imgList xs =
     let
-        n =
-            List.length xs
-
         f i url =
-            img
-                [ width 100
-                , src url
-                ]
-                []
+            img [ width 100, src url] []
     in
         Keyed.node "div" [ class "container" ] <|
             List.indexedMap (\i (Url url) -> ( url, f i url )) xs
@@ -243,7 +223,7 @@ fetch : Cmd Msg
 fetch =
     let
         url =
-            "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&prop=imageinfo&iiprop=url|size|sha1&generator=random&iiurlwidth=100&grnnamespace=6&grnlimit=5"
+            "https://commons.wikimedia.org/w/api.php?origin=*&action=query&format=json&prop=imageinfo&iiprop=url|size|sha1&generator=random&iiurlwidth=100&grnnamespace=6&grnlimit=20"
     in
         Http.send NewData (Http.get url decodeResponse)
 
