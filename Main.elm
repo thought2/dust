@@ -32,31 +32,35 @@ type Url
     = Url String
 
 
-scaleUrl : ScalableUrl -> Int -> Maybe Url
-scaleUrl { maxSize, urlTemplate } height =
+scaleUrl : Int -> ScalableUrl -> Maybe Url
+scaleUrl width { maxSize, urlTemplate } =
     let
-        ( _, maxHeight ) =
+        ( maxWidth, _ ) =
             maxSize
 
         ( a, b ) =
             urlTemplate
     in
-        if height <= maxHeight then
-            Just (Url (String.concat [ a, toString height, b ]))
+        if width <= maxWidth then
+            Just (Url (String.concat [ a, toString width, b ]))
         else
             Nothing
 
 
 type alias Model =
-    { urls : List ScalableUrl
+    { urls : List Url
+    , displayedUrls : Maybe (List Url)
     , isFetching : Bool
+    , width : Int
     }
 
 
 init : ( Model, Cmd Msg )
 init =
     ( { urls = []
+      , displayedUrls = Nothing
       , isFetching = False
+      , width = 400
       }
     , fetch
     )
@@ -69,16 +73,120 @@ init =
 type Msg
     = Fetch
     | NewData (Result Http.Error (List ScalableUrl))
+    | FillDisplayed
+    | AddToDisplay
+    | RemoveFromDisplay
+
+
+getWidth : ( Int, Int ) -> Int
+getWidth =
+    Tuple.first
+
+
+maybeFetch : Model -> Cmd Msg
+maybeFetch { urls, isFetching } =
+    if List.length urls <= 20 && not isFetching then
+        fetch
+    else
+        Cmd.none
+
+
+isJust : Maybe a -> Bool
+isJust m =
+    case m of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
+
+
+addToDisplay : Int -> Model -> Model
+addToDisplay n model =
+    let
+        f dUrls =
+            { model
+                | urls = List.drop n model.urls
+                , displayedUrls = Just (dUrls ++ List.take n model.urls)
+            }
+    in
+        case model.displayedUrls of
+            Just dUrls ->
+                f dUrls
+
+            Nothing ->
+                f []
+
+
+maybeStart : Model -> Model
+maybeStart model =
+    let
+        { urls, displayedUrls } =
+            model
+    in
+        if List.length urls >= 15 && not (isJust displayedUrls) then
+            addToDisplay 5 model
+        else
+            model
+
+
+handleNewData : List ScalableUrl -> Model -> Model
+handleNewData data model =
+    let
+        nextUrls =
+            List.filterMap (scaleUrl model.width) data ++ model.urls
+
+        nextModel =
+            { model | isFetching = False, urls = nextUrls }
+    in
+        nextModel
+
+
+removeFromDisplay : Model -> Model
+removeFromDisplay model =
+    let
+        { displayedUrls } =
+            model
+
+        result =
+            Maybe.map List.tail displayedUrls
+
+        nextModel =
+            case result of
+                Just (Just xs) ->
+                    { model | displayedUrls = Just xs }
+
+                _ ->
+                    model
+    in
+        nextModel
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Fetch ->
-            ( model, fetch )
+            ( { model | isFetching = True }, fetch )
 
         NewData (Ok data) ->
-            ( { model | urls = data}, Cmd.none )
+            let
+                model_ =
+                    maybeStart <| handleNewData data model
+            in
+                ( model_, maybeFetch model_ )
+
+        NewData _ ->
+            ( model, fetch )
+
+        AddToDisplay ->
+            let
+                model_ =
+                    addToDisplay 1 model
+            in
+                ( model_, maybeFetch model_ )
+
+        RemoveFromDisplay ->
+            ( removeFromDisplay model, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -88,18 +196,44 @@ update msg model =
 -- VIEW
 
 
+imgStack : List Url -> List (Html Msg)
+imgStack xs =
+    let
+        opacity =
+            1.0 / (toFloat <| List.length xs)
+
+        styles =
+            [ ( "width", "600px" )
+            , ( "height", "450px" )
+            , ( "position", "absolute" )
+            , ( "opacity", toString opacity )
+            ]
+
+        f (Url url) =
+            img [ src url, style styles ] []
+    in
+        List.map f xs
+
+
 view : Model -> Html Msg
 view model =
     let
-        f i x =
-            case (scaleUrl x 600) of
-                Just (Url url) ->
-                    img [ src url, style [ ( "width", "600px" ), ( "height", "450px" ), ( "position", "absolute" ), ( "opacity", "0.2" ) ] ] []
+        f (Url url) =
+            img [ src url, style [ ( "width", "600px" ), ( "height", "450px" ), ( "position", "absolute" ), ( "opacity", "0.2" ) ] ] []
 
-                _ ->
-                    text "no"
+        g i (Url url) =
+            div [] [ text <| String.concat [ (toString i), " ", url ] ]
+
+        menu =
+            [ div [ onClick AddToDisplay ] [ text "more" ], div [ onClick RemoveFromDisplay ] [ text " less" ] ]
     in
-        div [] <| List.indexedMap f model.urls
+        case model.displayedUrls of
+            Just urls ->
+                div [onClick AddToDisplay] (imgStack urls ++ menu)
+                --div [] <| (List.indexedMap g urls) ++ menu ++ [ text (toString <| List.length model.urls) ]
+
+            Nothing ->
+                text "loading"
 
 
 
