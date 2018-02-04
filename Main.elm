@@ -1,12 +1,15 @@
 module Main exposing (..)
 
 import Html exposing (..)
+import Html.Keyed as Keyed
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Json.Decode exposing (..)
 import Dict as Dict
 import Regex exposing (..)
+import Random as Random
+import Time exposing (..)
 
 
 main =
@@ -52,6 +55,8 @@ type alias Model =
     , displayedUrls : Maybe (List Url)
     , isFetching : Bool
     , width : Int
+    , addingTime : Time
+    , deletionTime : Time
     }
 
 
@@ -61,6 +66,8 @@ init =
       , displayedUrls = Nothing
       , isFetching = False
       , width = 400
+      , addingTime = 1
+      , deletionTime = 1
       }
     , fetch
     )
@@ -74,8 +81,14 @@ type Msg
     = Fetch
     | NewData (Result Http.Error (List ScalableUrl))
     | FillDisplayed
-    | AddToDisplay
-    | RemoveFromDisplay
+    | AddToDisplay Float
+    | RemoveFromDisplay Float
+    | AddToDisplayRandom
+    | RemoveFromDisplayRandom
+    | AddingTick Time
+    | DeletionTick Time
+    | NewAddingTime Time
+    | NewDeletionTime Time
 
 
 getWidth : ( Int, Int ) -> Int
@@ -101,21 +114,47 @@ isJust m =
             False
 
 
-addToDisplay : Int -> Model -> Model
-addToDisplay n model =
-    let
-        f dUrls =
-            { model
-                | urls = List.drop n model.urls
-                , displayedUrls = Just (dUrls ++ List.take n model.urls)
-            }
-    in
-        case model.displayedUrls of
-            Just dUrls ->
-                f dUrls
+initDisplay n model =
+    case model.displayedUrls of
+        Just _ ->
+            model
 
-            Nothing ->
-                f []
+        Nothing ->
+            { model
+                | displayedUrls = Just (List.take n model.urls)
+                , urls = List.drop n model.urls
+            }
+
+
+addAtIndex : Int -> List a -> a -> List a
+addAtIndex n xs x =
+    List.concat
+        [ List.take n xs
+        , [ x ]
+        , List.drop n xs
+        ]
+
+
+removeAtIndex : Int -> List a -> List a
+removeAtIndex n xs =
+    List.append (List.take n xs) (List.drop (n + 1) xs)
+
+
+addToDisplay : Float -> Model -> Model
+addToDisplay float model =
+    case ( model.urls, model.displayedUrls ) of
+        ( x :: xs, Just dUrls ) ->
+            let
+                index =
+                    round (float * toFloat (List.length dUrls))
+            in
+                { model
+                    | displayedUrls = Just <| addAtIndex index dUrls x
+                    , urls = List.drop 1 model.urls
+                }
+
+        _ ->
+            model
 
 
 maybeStart : Model -> Model
@@ -125,7 +164,7 @@ maybeStart model =
             model
     in
         if List.length urls >= 15 && not (isJust displayedUrls) then
-            addToDisplay 5 model
+            initDisplay 5 model
         else
             model
 
@@ -142,24 +181,20 @@ handleNewData data model =
         nextModel
 
 
-removeFromDisplay : Model -> Model
-removeFromDisplay model =
-    let
-        { displayedUrls } =
+removeFromDisplay : Float -> Model -> Model
+removeFromDisplay float model =
+    case model.displayedUrls of
+        Just dUrls ->
+            let
+                index =
+                    round (float * toFloat (List.length dUrls))
+            in
+                { model
+                    | displayedUrls = Just <| removeAtIndex index dUrls
+                }
+
+        _ ->
             model
-
-        result =
-            Maybe.map List.tail displayedUrls
-
-        nextModel =
-            case result of
-                Just (Just xs) ->
-                    { model | displayedUrls = Just xs }
-
-                _ ->
-                    model
-    in
-        nextModel
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -178,15 +213,44 @@ update msg model =
         NewData _ ->
             ( model, fetch )
 
-        AddToDisplay ->
+        AddToDisplayRandom ->
+            ( model, Random.generate AddToDisplay (Random.float 0 1) )
+
+        AddToDisplay float ->
             let
                 model_ =
-                    addToDisplay 1 model
+                    addToDisplay float model
             in
                 ( model_, maybeFetch model_ )
 
-        RemoveFromDisplay ->
-            ( removeFromDisplay model, Cmd.none )
+        RemoveFromDisplayRandom ->
+            ( model, Random.generate RemoveFromDisplay (Random.float 0 1) )
+
+        RemoveFromDisplay float ->
+            ( removeFromDisplay float model, Cmd.none )
+
+        NewAddingTime t ->
+            ( { model | addingTime = t }, Cmd.none )
+
+        NewDeletionTime t ->
+            ( { model | deletionTime = t }, Cmd.none )
+
+        AddingTick time ->
+            ( model
+            , Cmd.batch
+                [ Random.generate AddToDisplay (Random.float 0 1)
+                , Random.generate NewAddingTime (Random.float 3 5)
+                ]
+            )
+
+        DeletionTick time ->
+            ( model
+            , Cmd.batch
+                [ Random.generate RemoveFromDisplay (Random.float 0 1)
+                , Random.generate NewDeletionTime (Random.float 3 5)
+                ]
+            )
+
 
         _ ->
             ( model, Cmd.none )
@@ -196,23 +260,48 @@ update msg model =
 -- VIEW
 
 
+px : a -> String
+px n =
+    String.append (toString n) "px"
+
+
 imgStack : List Url -> List (Html Msg)
 imgStack xs =
     let
+        n =
+            List.length xs
+
         opacity =
-            1.0 / (toFloat <| List.length xs)
+            1.0 / (toFloat <| n)
 
-        styles =
-            [ ( "width", "600px" )
-            , ( "height", "450px" )
-            , ( "position", "absolute" )
-            , ( "opacity", toString opacity )
-            ]
+        styles i =
+            let
+                offset =
+                    px <| (toFloat i / toFloat n) * 50.0
+            in
+                [ ( "width", "600px" )
+                , ( "height", "450px" )
+                , ( "left", offset )
+                , ( "top", offset )
+                , ( "border", String.append (px 1) " solid black" )
+                , ( "position", "absolute" )
+                , ( "opacity", toString opacity )
+                ]
 
-        f (Url url) =
-            img [ src url, style styles ] []
+        f i (Url url) =
+            img [ src url, style (styles i) ] []
     in
-        List.map f xs
+        List.indexedMap f xs
+
+
+imgList : List Url -> Html Msg
+imgList xs =
+    let
+        f url =
+            img [ src url, style [ ( "width", px 100 ), ( "height", px 100 ) ] ] []
+    in
+        Keyed.ol [] <|
+            List.map (\(Url url) -> ( url, f url )) xs
 
 
 view : Model -> Html Msg
@@ -225,13 +314,13 @@ view model =
             div [] [ text <| String.concat [ (toString i), " ", url ] ]
 
         menu =
-            [ div [ onClick AddToDisplay ] [ text "more" ], div [ onClick RemoveFromDisplay ] [ text " less" ] ]
+            [ div [ onClick AddToDisplayRandom ] [ text "more" ], div [ onClick RemoveFromDisplayRandom ] [ text " less" ] ]
     in
         case model.displayedUrls of
             Just urls ->
-                div [onClick AddToDisplay] (imgStack urls ++ menu)
-                --div [] <| (List.indexedMap g urls) ++ menu ++ [ text (toString <| List.length model.urls) ]
+                div [] ([ (imgList urls) ] ++ menu)
 
+            --div [] <| (List.indexedMap g urls) ++ menu ++ [ text (toString <| List.length model.urls) ]
             Nothing ->
                 text "loading"
 
@@ -242,7 +331,10 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    Sub.batch
+        [ Time.every (model.addingTime * second) AddingTick
+        , Time.every (model.deletionTime * second) DeletionTick
+        ]
 
 
 
